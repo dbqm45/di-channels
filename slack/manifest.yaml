@@ -22,6 +22,8 @@ oauth_config:
   scopes:
     bot:
       - commands
+      - chat:write # "waiting for you" direct messages to the approver (step 17)
+      - im:write # open that direct message
 settings:
   interactivity:
     is_enabled: true
