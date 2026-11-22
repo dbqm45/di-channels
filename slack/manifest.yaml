@@ -1,0 +1,31 @@
+# Slack app manifest for DI Channels (paste at api.slack.com/apps → Create New App → From a manifest).
+# Replace PUBLIC_URL with the https address where di-channels runs (a tunnel works for tests), in both places.
+display_information:
+  name: DI Suite
+  description: Add questions to stories in DI Definition, from Slack
+features:
+  bot_user:
+    display_name: DI Suite
+    always_online: false
+  shortcuts:
+    - name: Add question to a story
+      type: message
+      callback_id: di_add_question
+      description: Adds this message as a question on a story in DI Definition
+  slash_commands:
+    - command: /di-question
+      url: https://PUBLIC_URL/slack/commands
+      description: Add a question to a story
+      usage_hint: PAY-123 What happens if the card expires?
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - commands
+settings:
+  interactivity:
+    is_enabled: true
+    request_url: https://PUBLIC_URL/slack/interactions
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
