@@ -94,4 +94,6 @@ Pytanie pojawia się na stronie historyjki w DI Definition z autorem „<nazwa> 
 | skrót nie otwiera okna, w terminalu `views.open failed` | zły `SLACK_BOT_TOKEN` albo aplikacja niezainstalowana |
 | na starcie: `… is not set` | brak zmiennej o tej nazwie w `.env` (albo brak pliku `.env` w katalogu, z którego uruchamiasz `npm start`) |
 
-Usługa nie zapisuje w terminalu treści pytań ani kluczy.
+W terminalu jest linia na każde żądanie (`POST /slack/commands → 200 (12 ms)`) i wynik każdego pytania
+(`question on PAY-123 from /di-question: added`). Brak linii po wysłaniu komendy znaczy, że żądanie ze Slacka nie
+dotarło do usługi. Usługa nie zapisuje w terminalu treści pytań ani kluczy.

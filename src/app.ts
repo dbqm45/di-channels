@@ -45,6 +45,9 @@ export function replyText(r: AskResult, key: string): string {
   return 'DI Definition did not answer. Try again in a moment — sending the same question twice does not add it twice.';
 }
 
+/** What happened to a question, for the log: never its text. */
+export const outcome = (r: AskResult) => (r.ok ? (r.duplicate ? 'already added' : 'added') : r.reason === 'rejected' ? 'rejected by DI Definition' : r.reason === 'unknown_item' ? 'no such story' : 'DI Definition did not answer');
+
 export async function handle(req: Request, cfg: Config, deps: Deps): Promise<Response> {
   if (req.method === 'GET' && req.path === '/health') return ok({ ok: true });
   if (req.method !== 'POST' || (req.path !== '/slack/commands' && req.path !== '/slack/interactions')) return { status: 404 };
@@ -77,9 +80,11 @@ async function command(form: URLSearchParams, cfg: Config, deps: Deps): Promise<
     author: { name: (form.get('user_name') || user).slice(0, 80), user },
   };
   deps.defer(
-    askDefinition({ ...cfg.definition, fetch: deps.fetch }, q).then((r) =>
-      deps.fetch(responseUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ response_type: 'ephemeral', text: replyText(r, q.item) }) }),
-    ),
+    askDefinition({ ...cfg.definition, fetch: deps.fetch }, q).then(async (r) => {
+      deps.log(`question on ${q.item} from /di-question: ${outcome(r)}`);
+      const sent = await deps.fetch(responseUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ response_type: 'ephemeral', text: replyText(r, q.item) }) });
+      if (!sent.ok) deps.log(`reply to Slack failed: HTTP ${sent.status}`);
+    }),
   );
   return ok({ response_type: 'ephemeral', text: `Adding your question to ${parsed.key}…` });
 }
@@ -143,6 +148,7 @@ async function interaction(form: URLSearchParams, cfg: Config, deps: Deps): Prom
       author: { name: (p.user?.name || p.user?.username || user).slice(0, 80), user },
     };
     const r = await askDefinition({ ...cfg.definition, fetch: deps.fetch, timeoutMs: cfg.modalTimeoutMs ?? 2500 }, q);
+    deps.log(`question on ${key} from the shortcut: ${outcome(r)}`);
     if (!r.ok && r.reason === 'unknown_item') return ok({ response_action: 'errors', errors: { item: `There is no story ${key} in DI Definition` } });
     return ok({
       response_action: 'update',
