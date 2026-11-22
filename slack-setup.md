@@ -32,13 +32,13 @@ Nie commituj kluczy i nie wklejaj ich do czatu.
 
 ## 3. Uruchomienie
 
-**DI Definition** (`ci_for_sdlc`): dopisz do `.env`
+**DI Definition** (`ci_for_sdlc`) nie czyta pliku `.env` — sekret podaj w poleceniu, którym go uruchamiasz:
 
 ```
-CI_CHANNELS_SIGNING_SECRET=<ciąg z kroku 2>
+CI_CHANNELS_SIGNING_SECRET=<ciąg z kroku 2> npm start
 ```
 
-i uruchom ponownie (`npm start`); działa na `http://127.0.0.1:4317`.
+(albo `… npm run dev`). Działa na `http://127.0.0.1:4317`; sprawdzenie: `http://127.0.0.1:4317/api/health`.
 
 **DI Channels** (to repo):
 
@@ -89,7 +89,7 @@ Pytanie pojawia się na stronie historyjki w DI Definition z autorem „<nazwa> 
 |---|---|
 | Slack: „dispatch_failed” albo brak odpowiedzi | tunel nie działa albo zły Request URL; sprawdź `/health` |
 | w terminalu: `refused a Slack request: invalid X-Slack-Signature` | zły `SLACK_SIGNING_SECRET` |
-| „DI Definition did not answer” | DI Definition nie działa, zły `DI_DEFINITION_URL` albo różne `CI_CHANNELS_SIGNING_SECRET` (DI Definition odpowiada wtedy 401) |
+| „DI Definition did not answer” | DI Definition nie działa, zły `DI_DEFINITION_URL`, DI Definition uruchomione bez `CI_CHANNELS_SIGNING_SECRET` w poleceniu (odpowiada wtedy 404) albo różne sekrety w obu aplikacjach (401) |
 | „There is no story …” | klucza nie ma w DI Definition (albo jest w innej przestrzeni — `DI_CHANNELS_WORKSPACES`) |
 | skrót nie otwiera okna, w terminalu `views.open failed` | zły `SLACK_BOT_TOKEN` albo aplikacja niezainstalowana |
 | na starcie: `… is not set` | brak zmiennej o tej nazwie w `.env` (albo brak pliku `.env` w katalogu, z którego uruchamiasz `npm start`) |
