@@ -110,6 +110,23 @@ Test: każda nowa pozycja w skrzynce DI Decision (np. prośba o bramkę z fabryk
 zakładce aplikacji w Slacku: co, przy jakiej zmianie, termin i gdzie zdecydować. Wieczorem i w weekend Slack pokaże
 ją o 8:00. W terminalu di-channels: `waiting <pozycja>: sent` albo `scheduled for …`.
 
+## 6. Przypomnienia o terminach (N3): cron
+
+Przypomnienia, „po terminie”, „wstrzymana” i „do przeglądu” wysyła pdi, gdy ktoś sprawdzi terminy. Żeby działo się
+to samo, dodaj cron po stronie pdi (szczegóły: README pdi, sekcja „Czeka na Ciebie” → Cron):
+
+1. Do `~/.sdlc/env` dopisz `PDI_CHANNELS_URL=http://localhost:3100` i `PDI_CHANNELS_SIGNING_SECRET=<ten sam sekret
+   co w di-channels/.env>`.
+2. `crontab -e`, linia (pełne ścieżki: `which uv`, katalog klonu pdi):
+   ```
+   0 * * * * /opt/homebrew/bin/uv run --directory /Users/<ty>/<ścieżka>/pdi sdlc deadlines >> ~/.sdlc/deadlines.log 2>&1
+   ```
+3. di-channels musi wtedy działać (`npm start`), inaczej pdi zapisze wysyłkę jako nieudaną. Wieczorem i w weekend
+   Slack sam wstrzyma wiadomość do 8:00.
+
+Sprawdzenie od ręki: `uv run sdlc deadlines` w katalogu pdi; w terminalu di-channels pojawi się
+`waiting <pozycja> (<etap>): sent`, jeśli jakiś etap minął.
+
 ## Gdy coś nie działa
 
 | Objaw | Przyczyna |
