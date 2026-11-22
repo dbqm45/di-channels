@@ -23,5 +23,22 @@ export function configFrom(env: Record<string, string | undefined>): Config {
     ...(env.SLACK_TEAM_ID?.trim() && { slackTeam: env.SLACK_TEAM_ID.trim() }),
     definition: { url, secret: need('CI_CHANNELS_SIGNING_SECRET') },
     workspaces,
+    ...waitingFrom(env),
   };
+}
+
+/** "Waiting for you" (step 17) is on only with both the pdi secret and the approver's Slack id. */
+function waitingFrom(env: Record<string, string | undefined>): Pick<Config, 'waiting'> {
+  const secret = env.PDI_CHANNELS_SIGNING_SECRET?.trim();
+  const approver = env.DI_CHANNELS_APPROVER?.trim();
+  if (!secret && !approver) return {};
+  if (!secret || !approver) throw new Error('PDI_CHANNELS_SIGNING_SECRET and DI_CHANNELS_APPROVER go together');
+  if (!/^[UW][A-Z0-9]{2,20}$/.test(approver)) throw new Error('DI_CHANNELS_APPROVER must be a Slack user id (U…)');
+  const timeZone = env.DI_CHANNELS_TIMEZONE?.trim() || 'Europe/Warsaw';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+  } catch {
+    throw new Error('DI_CHANNELS_TIMEZONE is not a time zone');
+  }
+  return { waiting: { secret, approver, timeZone } };
 }

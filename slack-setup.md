@@ -86,6 +86,30 @@ Darmowy tunel ma nowy adres przy każdym uruchomieniu — wtedy popraw oba pola.
 Pytanie pojawia się na stronie historyjki w DI Definition z autorem „<nazwa> (Slack)” i oznaczeniem
 „Not accepted yet”. Gotowość obniża dopiero po przyjęciu przez PO.
 
+## 5. „Czeka na Ciebie” z DI Decision (krok 17)
+
+1. **Nowe uprawnienia:** w aplikacji Slacka **OAuth & Permissions** → Bot Token Scopes → dodaj `chat:write` i
+   `im:write` (albo wklej nowy [`slack/manifest.yaml`](slack/manifest.yaml) w **App Manifest**) → **Reinstall to
+   Workspace**. Token `xoxb-…` zwykle zostaje ten sam.
+2. **Twój identyfikator w Slacku:** kliknij swoje zdjęcie → **Profile** → **⋮** → **Copy member ID** (`U…`).
+3. **Wspólny sekret pdi ↔ DI Channels:** nowy losowy ciąg (`openssl rand -hex 32`).
+4. **di-channels `.env`:**
+   ```
+   PDI_CHANNELS_SIGNING_SECRET=<ciąg z punktu 3>
+   DI_CHANNELS_APPROVER=U…
+   ```
+   i ponownie `npm start`.
+5. **pdi:** w środowisku `pdi-receiver` (i konsoli, i serwera MCP):
+   ```
+   PDI_CHANNELS_URL=http://localhost:3100
+   PDI_CHANNELS_SIGNING_SECRET=<ten sam ciąg>
+   ```
+   (pdi i di-channels na tym samym komputerze: tunel nie jest potrzebny). Potem `sdlc down && sdlc up`.
+
+Test: każda nowa pozycja w skrzynce DI Decision (np. prośba o bramkę z fabryki) daje wiadomość od **DI Suite** w
+zakładce aplikacji w Slacku: co, przy jakiej zmianie, termin i gdzie zdecydować. Wieczorem i w weekend Slack pokaże
+ją o 8:00. W terminalu di-channels: `waiting <pozycja>: sent` albo `scheduled for …`.
+
 ## Gdy coś nie działa
 
 | Objaw | Przyczyna |
@@ -95,6 +119,8 @@ Pytanie pojawia się na stronie historyjki w DI Definition z autorem „<nazwa> 
 | „DI Definition did not answer” | DI Definition nie działa, zły `DI_DEFINITION_URL`, DI Definition bez `CI_CHANNELS_SIGNING_SECRET` (brak w `.env` albo stara wersja; odpowiada wtedy 404) albo różne sekrety w obu aplikacjach (401) |
 | „There is no story …” | klucza nie ma w DI Definition (albo jest w innej przestrzeni — `DI_CHANNELS_WORKSPACES`) |
 | skrót nie otwiera okna, w terminalu `views.open failed` | zły `SLACK_BOT_TOKEN` albo aplikacja niezainstalowana |
+| `waiting …: Slack refused the message: missing_scope` | brak `chat:write`/`im:write` albo aplikacja niezainstalowana ponownie po ich dodaniu |
+| na starcie: `… go together` | ustawiony tylko jeden z `PDI_CHANNELS_SIGNING_SECRET`, `DI_CHANNELS_APPROVER` |
 | na starcie: `… is not set` | brak zmiennej o tej nazwie w `.env` (albo brak pliku `.env` w katalogu, z którego uruchamiasz `npm start`) |
 
 W terminalu jest linia na każde żądanie (`POST /slack/commands → 200 (12 ms)`) i wynik każdego pytania

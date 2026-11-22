@@ -13,6 +13,11 @@ Pytanie trafia do DI Definition przez podpisany `POST /api/webhooks/channels` (o
 użytkownika Slacka idzie razem z pytaniem, żeby później powiązać go z kontem suity. Ponowne wysłanie tego samego
 zdarzenia nie dodaje pytania drugi raz.
 
+**„Czeka na Ciebie” z DI Decision** (krok 17): pdi wysyła nową pozycję skrzynki (bramka, PR, triaż, ocena skutku) na
+podpisany `POST /pdi/waiting`; zatwierdzający dostaje prywatną wiadomość z terminem z operating modelu (OM1). W godzinach
+ciszy (18:00–8:00 i weekendy, `DI_CHANNELS_TIMEZONE`) Slack sam wstrzymuje wiadomość do 8:00 najbliższego dnia
+roboczego (`chat.scheduleMessage`).
+
 Bez przypomnień, głosowania, odpowiedzi w wątku i Teams — to R8 i kolejne kroki.
 
 ## Uruchomienie
@@ -29,11 +34,14 @@ npm start
 | Zmienna | Znaczenie |
 |---|---|
 | `SLACK_SIGNING_SECRET` | Basic Information → Signing Secret aplikacji Slack |
-| `SLACK_BOT_TOKEN` | OAuth & Permissions → Bot User OAuth Token (`xoxb-…`); jedyne uprawnienie: `commands` |
+| `SLACK_BOT_TOKEN` | OAuth & Permissions → Bot User OAuth Token (`xoxb-…`); uprawnienia: `commands`, a dla „czeka na Ciebie” `chat:write` i `im:write` |
 | `SLACK_TEAM_ID` | opcjonalnie: tylko ta przestrzeń Slacka (`T…`) |
 | `DI_DEFINITION_URL` | adres DI Definition (https; http tylko dla localhost) |
 | `CI_CHANNELS_SIGNING_SECRET` | ten sam sekret co w DI Definition |
 | `DI_CHANNELS_WORKSPACES` | opcjonalnie: `KANAŁ=przestrzeń,…` (np. `C0123ABCD=mobile`); reszta kanałów → przestrzeń domyślna |
+| `PDI_CHANNELS_SIGNING_SECRET` | „czeka na Ciebie”: ten sam sekret co w pdi; razem z `DI_CHANNELS_APPROVER` |
+| `DI_CHANNELS_APPROVER` | identyfikator zatwierdzającego w Slacku (`U…`; profil → ⋮ → Copy member ID) |
+| `DI_CHANNELS_TIMEZONE` | strefa godzin ciszy; domyślnie `Europe/Warsaw` |
 | `PORT` | domyślnie 3100 |
 
 ## Aplikacja w Slacku

@@ -1,4 +1,5 @@
 import { askDefinition, type AskResult, type ChannelQuestion, type DefinitionLink } from './definition.ts';
+import { deliverAt, parseWaiting, pdiSignatureProblem, waitingText, type WaitingConfig } from './waiting.ts';
 import { ADD_QUESTION_CALLBACK, QUESTION_MODAL, itemKeyIn, messageLink, parseCommand, questionModal, slackSignatureProblem, type ModalState } from './slack.ts';
 
 export interface Config {
@@ -11,6 +12,8 @@ export interface Config {
   workspaces: Record<string, string>;
   /** How long the modal waits for DI Definition before answering Slack (Slack allows 3 s in all). */
   modalTimeoutMs?: number;
+  /** "Waiting for you" from DI Decision (step 17); without it POST /pdi/waiting is 404. */
+  waiting?: WaitingConfig;
 }
 
 export interface Request {
@@ -31,6 +34,8 @@ export interface Deps {
   /** Work after the answer to Slack (the slash command replies through its response_url). */
   defer: (work: Promise<unknown>) => void;
   log: (msg: string) => void;
+  /** Ids of pdi messages already delivered (a retried delivery is not sent twice); per process. */
+  seen?: Set<string>;
 }
 
 const ok = (body?: unknown): Response => ({ status: 200, ...(body !== undefined && { body }) });
@@ -50,6 +55,7 @@ export const outcome = (r: AskResult) => (r.ok ? (r.duplicate ? 'already added' 
 
 export async function handle(req: Request, cfg: Config, deps: Deps): Promise<Response> {
   if (req.method === 'GET' && req.path === '/health') return ok({ ok: true });
+  if (req.method === 'POST' && req.path === '/pdi/waiting') return waiting(req, cfg, deps);
   if (req.method !== 'POST' || (req.path !== '/slack/commands' && req.path !== '/slack/interactions')) return { status: 404 };
   const problem = slackSignatureProblem(cfg.slackSigningSecret, req.headers['x-slack-request-timestamp'], req.body, req.headers['x-slack-signature'], deps.now());
   if (problem) {
@@ -156,4 +162,47 @@ async function interaction(form: URLSearchParams, cfg: Config, deps: Deps): Prom
     });
   }
   return ok();
+}
+
+const slackApi = async (deps: Deps, token: string, method: string, body: unknown): Promise<{ ok?: boolean; error?: string; channel?: { id?: string } }> => {
+  const res = await deps
+    .fetch(`https://slack.com/api/${method}`, { method: 'POST', headers: { 'content-type': 'application/json; charset=utf-8', authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+    .catch(() => undefined);
+  return ((await res?.json().catch(() => undefined)) as { ok?: boolean; error?: string; channel?: { id?: string } } | undefined) ?? { ok: false, error: 'no answer' };
+};
+
+/** pdi → a direct message to the approver; inside quiet hours Slack holds it until 8:00 of the next working day. */
+async function waiting(req: Request, cfg: Config, deps: Deps): Promise<Response> {
+  if (!cfg.waiting) return { status: 404 };
+  const problem = pdiSignatureProblem(cfg.waiting.secret, req.headers['x-pdi-timestamp'], req.body, req.headers['x-pdi-signature'], deps.now());
+  if (problem) {
+    deps.log(`refused a pdi message: ${problem}`);
+    return { status: 401 };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(req.body);
+  } catch {
+    return { status: 400, body: { detail: 'the body is not JSON' } };
+  }
+  const w = parseWaiting(parsed);
+  if (typeof w === 'string') return { status: 400, body: { detail: w } };
+  if (deps.seen?.has(w.id)) return ok({ delivered: 'duplicate' });
+  const dm = await slackApi(deps, cfg.slackBotToken, 'conversations.open', { users: cfg.waiting.approver });
+  if (!dm.ok || !dm.channel?.id) {
+    deps.log(`waiting ${w.item}: conversations.open failed: ${dm.error ?? 'no channel'}`);
+    return { status: 502, body: { detail: 'Slack did not open the direct message' } };
+  }
+  const later = deliverAt(deps.now(), cfg.waiting.timeZone);
+  const text = waitingText(w);
+  const sent = later
+    ? await slackApi(deps, cfg.slackBotToken, 'chat.scheduleMessage', { channel: dm.channel.id, text, post_at: Math.floor(later.getTime() / 1000) })
+    : await slackApi(deps, cfg.slackBotToken, 'chat.postMessage', { channel: dm.channel.id, text });
+  if (!sent.ok) {
+    deps.log(`waiting ${w.item}: Slack refused the message: ${sent.error ?? 'unknown'}`);
+    return { status: 502, body: { detail: 'Slack did not accept the message' } };
+  }
+  deps.seen?.add(w.id);
+  deps.log(`waiting ${w.item}: ${later ? `scheduled for ${later.toISOString()}` : 'sent'}`);
+  return ok({ delivered: later ? 'scheduled' : 'now', ...(later && { at: later.toISOString() }) });
 }
