@@ -46,8 +46,17 @@ i uruchom ponownie (`npm start`); działa na `http://127.0.0.1:4317`.
 git clone https://github.com/dbqm45/di-channels
 cd di-channels
 npm ci
-SLACK_SIGNING_SECRET=… SLACK_BOT_TOKEN=xoxb-… CI_CHANNELS_SIGNING_SECRET=<ten sam ciąg> DI_DEFINITION_URL=http://127.0.0.1:4317 npm start
+cp .env.example .env
 ```
+
+Uzupełnij `.env` kluczami z kroku 2 (`DI_DEFINITION_URL` jest już ustawiony na `http://127.0.0.1:4317`) i uruchom:
+
+```
+npm start
+```
+
+`npm start` czyta `.env`, gdy plik istnieje (plik jest w `.gitignore`). Zmienne podane w poleceniu wygrywają z plikiem.
+Po starcie w terminalu: `di-channels on :3100`.
 
 Usługa słucha na porcie 3100. Opcjonalnie: `SLACK_TEAM_ID=T…` (tylko ten workspace), `DI_CHANNELS_WORKSPACES=C…=mobile`
 (kanał → przestrzeń w DI Definition).
@@ -83,6 +92,6 @@ Pytanie pojawia się na stronie historyjki w DI Definition z autorem „<nazwa> 
 | „DI Definition did not answer” | DI Definition nie działa, zły `DI_DEFINITION_URL` albo różne `CI_CHANNELS_SIGNING_SECRET` (DI Definition odpowiada wtedy 401) |
 | „There is no story …” | klucza nie ma w DI Definition (albo jest w innej przestrzeni — `DI_CHANNELS_WORKSPACES`) |
 | skrót nie otwiera okna, w terminalu `views.open failed` | zły `SLACK_BOT_TOKEN` albo aplikacja niezainstalowana |
-| na starcie: `… is not set` | brak zmiennej o tej nazwie |
+| na starcie: `… is not set` | brak zmiennej o tej nazwie w `.env` (albo brak pliku `.env` w katalogu, z którego uruchamiasz `npm start`) |
 
 Usługa nie zapisuje w terminalu treści pytań ani kluczy.

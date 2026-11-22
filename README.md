@@ -22,7 +22,8 @@ Node ≥ 22.18 (TypeScript uruchamiany bezpośrednio), bez zależności w czasie
 ```bash
 npm ci
 npm test && npm run typecheck
-SLACK_SIGNING_SECRET=… SLACK_BOT_TOKEN=xoxb-… CI_CHANNELS_SIGNING_SECRET=… DI_DEFINITION_URL=https://… npm start
+cp .env.example .env   # uzupełnij klucze; npm start czyta .env, gdy istnieje
+npm start
 ```
 
 | Zmienna | Znaczenie |
