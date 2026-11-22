@@ -14,8 +14,13 @@ export interface WaitingConfig {
   timeZone: string;
 }
 
+export const STAGES = ['new', 'reminder', 'due_today', 'overdue', 'paused', 'review'] as const;
+export type Stage = (typeof STAGES)[number];
+
 export interface Waiting {
   id: string;
+  /** N3: which step of the deadline this is; absent in messages from before N3 means new. */
+  stage: Stage;
   item: string;
   kind: string;
   summary: string;
@@ -47,6 +52,7 @@ export function parseWaiting(body: unknown): Waiting | string {
   const b = body as Record<string, unknown>;
   const str = (k: string, max: number) => typeof b[k] === 'string' && (b[k] as string).length > 0 && (b[k] as string).length <= max;
   if (b.type !== 'gate.waiting') return 'type must be gate.waiting';
+  if (b.stage !== undefined && !STAGES.includes(b.stage as Stage)) return `stage: one of ${STAGES.join(', ')}`;
   for (const [k, max] of [['id', 128], ['item', 128], ['kind', 40], ['summary', 300], ['where', 100]] as const) if (!str(k, max)) return `${k}: missing or too long`;
   if (!str('due', 10) || !/^\d{4}-\d{2}-\d{2}$/.test(b.due as string)) return 'due: a date YYYY-MM-DD';
   if (typeof b.business_days !== 'number' || !Number.isInteger(b.business_days) || b.business_days < 0 || b.business_days > 60) return 'business_days: a whole number';
@@ -55,6 +61,7 @@ export function parseWaiting(body: unknown): Waiting | string {
   if (b.url !== undefined && (!str('url', 500) || !/^https?:\/\/\S+$/.test(b.url as string) || /[?&]t=/.test(b.url as string))) return 'url: an http(s) address without a session token';
   return {
     id: b.id as string,
+    stage: (b.stage as Stage | undefined) ?? 'new',
     item: b.item as string,
     kind: b.kind as string,
     summary: b.summary as string,
@@ -70,11 +77,32 @@ export function parseWaiting(body: unknown): Waiting | string {
 /** Slack mrkdwn: escape the three characters Slack treats as control characters. */
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** The first line per stage (operating model OM1 §4–§5). */
+const HEADS: Record<Stage, string> = {
+  new: 'Waiting for your decision',
+  reminder: 'Reminder: waiting for your decision',
+  due_today: 'Due today: waiting for your decision',
+  overdue: 'Overdue: waiting for your decision',
+  paused: 'Overdue twice the deadline: the change is paused',
+  review: 'Overdue four times the deadline: on the review list',
+};
+
+/** What the deadline did, where it did something. */
+const EFFECTS: Partial<Record<Stage, string>> = {
+  paused: 'No next phase starts until you decide.',
+  review: 'Decide, reject or put the change aside with a return condition.',
+};
+
 /** One message the approver can act on: what, for which change, by when, where to decide. */
 export function waitingText(w: Waiting): string {
   const what = [w.change, w.gate && !w.gate.startsWith('stage:') ? w.gate : w.gate?.split(':').slice(1).join(' → ')].filter(Boolean).join(' · ');
   const where = w.url ? `<${w.url}|Decide in DI Decision>` : `Decide in DI Decision: \`${esc(w.where)}\``;
-  return `*Waiting for your decision*${what ? ` — ${esc(what)}` : ''}\n${esc(w.summary)}\nDue ${w.due} (${w.business_days} working ${w.business_days === 1 ? 'day' : 'days'}). ${where}`;
+  const days = `${w.business_days} working ${w.business_days === 1 ? 'day' : 'days'}`;
+  const head = HEADS[w.stage];
+  const when =
+    w.stage === 'new' || w.stage === 'reminder' ? `Due ${w.due} (${days}).` : w.stage === 'due_today' ? `Due today, ${w.due}.` : `Was due ${w.due}.`;
+  const effect = EFFECTS[w.stage];
+  return `*${head}*${what ? ` — ${esc(what)}` : ''}\n${esc(w.summary)}\n${when}${effect ? ` ${effect}` : ''} ${where}`;
 }
 
 interface LocalTime {

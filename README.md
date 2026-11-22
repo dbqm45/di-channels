@@ -17,6 +17,8 @@ zdarzenia nie dodaje pytania drugi raz.
 podpisany `POST /pdi/waiting`; zatwierdzający dostaje prywatną wiadomość z terminem z operating modelu (OM1). W godzinach
 ciszy (18:00–8:00 i weekendy, `DI_CHANNELS_TIMEZONE`) Slack sam wstrzymuje wiadomość do 8:00 najbliższego dnia
 roboczego (`chat.scheduleMessage`).
+Kolejne etapy terminu (N3) przychodzą jako osobne wiadomości: przypomnienie, „termin dziś”, „po terminie”, „zmiana
+wstrzymana” (2 × termin) i „lista do przeglądu” (4 × termin).
 
 Bez przypomnień, głosowania, odpowiedzi w wątku i Teams — to R8 i kolejne kroki.
 

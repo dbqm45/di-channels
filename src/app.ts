@@ -203,6 +203,6 @@ async function waiting(req: Request, cfg: Config, deps: Deps): Promise<Response>
     return { status: 502, body: { detail: 'Slack did not accept the message' } };
   }
   deps.seen?.add(w.id);
-  deps.log(`waiting ${w.item}: ${later ? `scheduled for ${later.toISOString()}` : 'sent'}`);
+  deps.log(`waiting ${w.item} (${w.stage}): ${later ? `scheduled for ${later.toISOString()}` : 'sent'}`);
   return ok({ delivered: later ? 'scheduled' : 'now', ...(later && { at: later.toISOString() }) });
 }
