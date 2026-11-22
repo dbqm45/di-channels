@@ -15,6 +15,7 @@ const server = createServer((req, res) => {
     else chunks.push(c);
   });
   req.on('end', async () => {
+    const started = Date.now();
     const headers = Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));
     const out = await handle({ method: req.method ?? 'GET', path: (req.url ?? '/').split('?')[0]!, headers, body: Buffer.concat(chunks).toString('utf8') }, cfg, {
       fetch,
@@ -25,6 +26,7 @@ const server = createServer((req, res) => {
       log(`request failed: ${e instanceof Error ? e.message : 'unknown error'}`);
       return { status: 500 } as Response;
     });
+    log(`${req.method} ${(req.url ?? '/').split('?')[0]} → ${out.status} (${Date.now() - started} ms)`);
     res.writeHead(out.status, out.body === undefined ? {} : { 'content-type': 'application/json' });
     res.end(out.body === undefined ? '' : JSON.stringify(out.body));
   });

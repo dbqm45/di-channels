@@ -85,6 +85,8 @@ describe('/di-question', () => {
     });
     assert.equal(reply!.url, 'https://hooks.slack.com/commands/T0TEAM/1/abc');
     assert.match(JSON.parse(reply!.body).text, /^Added: your question is on PAY-123 — https:\/\/ci\.example\.com/);
+    assert.deepEqual(w.logs, ['question on PAY-123 from /di-question: added']);
+    assert.ok(w.logs.every((l) => !l.includes('card expires')), 'the log never carries the question');
   });
 
   it('CH-04: without a key and text the person gets the usage, and nothing is sent', async () => {
