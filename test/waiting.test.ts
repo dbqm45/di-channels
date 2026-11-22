@@ -125,6 +125,30 @@ describe('waiting for you (step 17)', () => {
     assert.match(waitingText(linked), /<https:\/\/pdi\.example\.com\/inbox\/evt-gate-1\|Decide in DI Decision>/);
   });
 
+  it('WT-10: each deadline stage has its own first line; no stage means new', () => {
+    const text = (stage?: string) => {
+      const w = parseWaiting(message(stage ? { stage } : {}));
+      assert.ok(typeof w !== 'string');
+      return waitingText(w);
+    };
+    assert.match(text(), /^\*Waiting for your decision\*/);
+    assert.match(text(), /Due 2026-11-30 \(5 working days\)/);
+    assert.match(text('reminder'), /^\*Reminder: waiting for your decision\*/);
+    assert.match(text('due_today'), /Due today, 2026-11-30\./);
+    assert.match(text('overdue'), /^\*Overdue: waiting for your decision\*[\s\S]*Was due 2026-11-30\./);
+    assert.match(text('paused'), /the change is paused[\s\S]*No next phase starts until you decide\./);
+    assert.match(text('review'), /on the review list[\s\S]*return condition/);
+    assert.equal(parseWaiting(message({ stage: 'later' })), 'stage: one of new, reminder, due_today, overdue, paused, review');
+  });
+
+  it('WT-11: a stage message is delivered and logged with its stage', async () => {
+    const w = world(WORKING);
+    const res = await handle(signed(message({ id: 'waiting-evt-gate-1-overdue', stage: 'overdue' }), WORKING), cfg, w.deps);
+    assert.deepEqual(res.body, { delivered: 'now' });
+    assert.match(String(w.calls[1]!.body.text), /^\*Overdue/);
+    assert.match(w.logs.join('\n'), /waiting evt-gate-1 \(overdue\): sent/);
+  });
+
   it('WT-09: configuration needs the secret and the approver together', () => {
     const base = { SLACK_SIGNING_SECRET: 's', SLACK_BOT_TOKEN: 'xoxb-1', CI_CHANNELS_SIGNING_SECRET: 'c', DI_DEFINITION_URL: 'https://ci.example.com' };
     assert.equal(configFrom(base).waiting, undefined);
