@@ -37,6 +37,8 @@ SLACK_SIGNING_SECRET=… SLACK_BOT_TOKEN=xoxb-… CI_CHANNELS_SIGNING_SECRET=…
 
 ## Aplikacja w Slacku
 
+Krok po kroku z tunelem, kluczami i rozwiązywaniem problemów: [`slack-setup.md`](slack-setup.md).
+
 1. Testowa przestrzeń Slacka (slack.com/get-started → „Create a new workspace”).
 2. api.slack.com/apps → **Create New App** → **From a manifest** → ta przestrzeń → wklej
    [`slack/manifest.yaml`](slack/manifest.yaml) z `PUBLIC_URL` zamienionym na adres usługi.
