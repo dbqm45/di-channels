@@ -1,0 +1,17 @@
+{
+  "name": "di-channels",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DI Channels: the Delivery Intelligence Suite in chat apps (Slack first)",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "start": "node src/server.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.3"
+  }
+}
