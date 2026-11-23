@@ -37,4 +37,7 @@ const server = createServer((req, res) => {
   });
 });
 const port = Number(process.env.PORT ?? 3100);
-server.listen(port, () => log(`di-channels on :${port}`));
+server.listen(port, () => {
+  log(`di-channels on :${port}`);
+  log(cfg.suite ? `suite person as author: on (di-identity ${cfg.suite.identityUrl})` : 'suite person as author: off (set SUITE_ISSUER, SUITE_CLIENT_SECRET and DI_IDENTITY_URL)');
+});

@@ -160,6 +160,10 @@ jak dotąd, z nazwą ze Slacka. Adres e-mail nie trafia do logów.
 | „DI Definition did not answer” | DI Definition nie działa, zły `DI_DEFINITION_URL`, DI Definition bez `CI_CHANNELS_SIGNING_SECRET` (brak w `.env` albo stara wersja; odpowiada wtedy 404) albo różne sekrety w obu aplikacjach (401) |
 | „There is no story …” | klucza nie ma w DI Definition (albo jest w innej przestrzeni — `DI_CHANNELS_WORKSPACES`) |
 | skrót nie otwiera okna, w terminalu `views.open failed` | zły `SLACK_BOT_TOKEN` albo aplikacja niezainstalowana |
+| na starcie: `suite person as author: off` | brak `SUITE_ISSUER`, `SUITE_CLIENT_SECRET`, `DI_IDENTITY_URL` w `.env` (albo zakomentowane) |
+| `… not found: Slack gave no e-mail` | brak `users:read.email` w tokenie: ponowna instalacja aplikacji, nowy `SLACK_BOT_TOKEN` |
+| `… not found: no single suite person with the Slack e-mail` | adres w Slacku inny niż konto w suicie albo osoba jeszcze się nie logowała |
+| `… not found: DI_IDENTITY_URL answered 404 without a di-identity answer` | `DI_IDENTITY_URL` wskazuje inną usługę (np. port 3100 tej usługi) |
 | `suite person for a Slack user not found: users.info: missing_scope` | brak `users:read`/`users:read.email` albo aplikacja niezainstalowana ponownie po ich dodaniu (punkt 7) |
 | `waiting …: Slack refused the message: missing_scope` | brak `chat:write`/`im:write` albo aplikacja niezainstalowana ponownie po ich dodaniu |
 | na starcie: `… go together` | ustawiony tylko jeden z `PDI_CHANNELS_SIGNING_SECRET`, `DI_CHANNELS_APPROVER` |

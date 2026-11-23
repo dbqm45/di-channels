@@ -10,7 +10,7 @@ const SUB = '7badb004-5f2f-4791-838f-9ee86d26839d';
 let clock = new Date('2026-11-23T12:00:00Z');
 
 /** Slack, Keycloak and di-identity in one fake; `calls` counts requests per host+path. */
-function suiteWorld(opts: { email?: string | null; identity?: number; slackError?: string } = {}) {
+function suiteWorld(opts: { email?: string | null; identity?: number; slackError?: string; notIdentity?: boolean } = {}) {
   const calls: string[] = [];
   const bodies: string[] = [];
   const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
@@ -23,6 +23,7 @@ function suiteWorld(opts: { email?: string | null; identity?: number; slackError
     }
     if (u.pathname.endsWith('/protocol/openid-connect/token')) return Response.json({ access_token: 'service-token', expires_in: 300 });
     if (u.pathname === '/api/people') {
+      if (opts.notIdentity) return new Response('', { status: 404 });
       assert.equal((init?.headers as Record<string, string>).authorization, 'Bearer service-token');
       assert.equal(u.searchParams.get('email'), 'ola@acme.com');
       return opts.identity === 404 ? Response.json({ error: 'none' }, { status: 404 }) : opts.identity ? new Response('', { status: opts.identity }) : Response.json({ sub: SUB, name: 'Ola Nowak', organizations: ['acme'] });
@@ -52,6 +53,20 @@ describe('the suite person behind a Slack user', () => {
     assert.equal(await missingScope.find('U1'), null);
     assert.match(missingScope.logs.join('\n'), /users.info: missing_scope/);
     assert.ok(![...failing.logs, ...missingScope.logs].some((l) => /acme\.com/i.test(l)));
+  });
+
+  it('SU-06: each miss says why in the log, without the e-mail, once per cache period', async () => {
+    const none = suiteWorld({ identity: 404 });
+    await none.find('U1');
+    await none.find('U1');
+    assert.deepEqual(none.logs, ['suite person for a Slack user not found: no single suite person with the Slack e-mail (di-identity answered 404)']);
+    const noEmail = suiteWorld({ email: null });
+    await noEmail.find('U1');
+    assert.match(noEmail.logs.join('\n'), /Slack gave no e-mail \(scope users:read\.email/);
+    const wrongUrl = suiteWorld({ notIdentity: true });
+    assert.equal(await wrongUrl.find('U1'), null);
+    assert.match(wrongUrl.logs.join('\n'), /DI_IDENTITY_URL answered 404 without a di-identity answer/);
+    assert.ok(![...none.logs, ...noEmail.logs, ...wrongUrl.logs].some((l) => /acme\.com/i.test(l)));
   });
 
   it('SU-03: a missing match is retried after 10 minutes, a found person after an hour', async () => {
