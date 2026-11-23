@@ -78,6 +78,14 @@ Wypisze adres `https://<coś>.trycloudflare.com` — to Twój `PUBLIC_URL`. Wpis
 Darmowy tunel ma nowy adres przy każdym uruchomieniu — wtedy popraw oba pola. Sprawdzenie, że tunel działa:
 `https://<adres>/health` zwraca `{"ok":true}`.
 
+- Request URL to pełny adres ze ścieżką. Sam adres tunelu daje w terminalu `POST / → 404`, a w Slacku „did not
+  respond”.
+- `Tunnel not found` na starcie cloudflared: polecenie uruchamia stary nazwany tunel (z `~/.cloudflared/config.yml`).
+  Do testów wystarczy `cloudflared tunnel --url …` powyżej; gdy odmawia przez plik konfiguracyjny, przenieś go na chwilę.
+- `Failed to dial a quic connection` w oknie tunelu: sieć gubi ruch UDP, a w tym czasie Slack nie dociera do usługi.
+  Pomaga `cloudflared tunnel --protocol http2 --url http://localhost:3100` (nowy adres, więc znowu oba pola).
+- Stały adres daje dopiero nazwany tunel z domeną w Cloudflare albo wdrożenie (Hetzner, `docs/17` w pdi).
+
 ## 4. Test
 
 - W kanale: `/di-question PAY-123 Czy to działa offline?` (klucz historyjki, która istnieje w DI Definition).
@@ -143,10 +151,14 @@ osoba zalogowała się już do suity (np. przez Google) tym samym adresem e-mail
    ```
    SUITE_ISSUER=http://localhost:8180/realms/suite
    SUITE_CLIENT_SECRET=<sekret z kroku 2>
-   DI_IDENTITY_URL=http://localhost:3000
+   DI_IDENTITY_URL=http://127.0.0.1:3200
    ```
-   i ponowne uruchomienie `npm start`.
-5. Test: `/di-question PAY-123 …` w Slacku. Na stronie historyjki w DI Definition autorem jest osoba z suity.
+   i ponowne uruchomienie `npm start`. Na starcie w terminalu: `suite person as author: on (di-identity …)`.
+   `di-identity` lokalnie słucha na 3200 (3000 to API Flags, 3100 ta usługa). Adres `127.0.0.1`, nie `localhost`:
+   na macOS `localhost:3100` trafia przez IPv6 w di-channels, więc zły port wygląda jak „brak osoby”.
+5. **DI Definition z wersją, która przyjmuje autora z suity** (ci_for_sdlc, „take the suite person as author of chat
+   questions”). Starsza wersja przyjmuje pytanie, ale pomija `suite_id` i dopisuje „(Slack)” do imienia z suity.
+6. Test: `/di-question PAY-123 …` w Slacku. Na stronie historyjki w DI Definition autorem jest osoba z suity.
 
 Gdy osoby nie ma w suicie, `di-identity` nie odpowiada albo minie limit czasu (w oknie skrótu 0,8 s), pytanie idzie
 jak dotąd, z nazwą ze Slacka. Adres e-mail nie trafia do logów.
@@ -164,6 +176,7 @@ jak dotąd, z nazwą ze Slacka. Adres e-mail nie trafia do logów.
 | `waiting …: Slack refused the message: missing_scope` | brak `chat:write`/`im:write` albo aplikacja niezainstalowana ponownie po ich dodaniu |
 | na starcie: `… go together` | ustawiony tylko jeden z `PDI_CHANNELS_SIGNING_SECRET`, `DI_CHANNELS_APPROVER` |
 | na starcie: `… is not set` | brak zmiennej o tej nazwie w `.env` (albo brak pliku `.env` w katalogu, z którego uruchamiasz `npm start`) |
+| autor „<imię z Google> (Slack)” | DI Definition w starszej wersji (punkt 7.5): `git pull` w ci_for_sdlc i restart |
 
 W terminalu jest linia na każde żądanie (`POST /slack/commands → 200 (12 ms)`) i wynik każdego pytania
 (`question on PAY-123 from /di-question: added`). Brak linii po wysłaniu komendy znaczy, że żądanie ze Slacka nie
