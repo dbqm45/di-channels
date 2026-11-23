@@ -24,6 +24,31 @@ export function configFrom(env: Record<string, string | undefined>): Config {
     definition: { url, secret: need('CI_CHANNELS_SIGNING_SECRET') },
     workspaces,
     ...waitingFrom(env),
+    ...suiteFrom(env),
+  };
+}
+
+const httpsOrLoopback = (name: string, raw: string): string => {
+  const u = new URL(raw);
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  if (!(u.protocol === 'https:' || (u.protocol === 'http:' && loopback))) throw new Error(`${name} must be https:// (http only for localhost)`);
+  return raw.replace(/\/+$/, '');
+};
+
+/** The suite person as author (ADR 17) is on only with the suite issuer, this app's client secret and di-identity. */
+function suiteFrom(env: Record<string, string | undefined>): Pick<Config, 'suite'> {
+  const issuer = env.SUITE_ISSUER?.trim();
+  const secret = env.SUITE_CLIENT_SECRET?.trim();
+  const identity = env.DI_IDENTITY_URL?.trim();
+  if (!issuer && !secret && !identity) return {};
+  if (!issuer || !secret || !identity) throw new Error('SUITE_ISSUER, SUITE_CLIENT_SECRET and DI_IDENTITY_URL go together');
+  return {
+    suite: {
+      issuer: httpsOrLoopback('SUITE_ISSUER', issuer),
+      clientId: env.SUITE_CLIENT_ID?.trim() || 'di-channels',
+      clientSecret: secret,
+      identityUrl: httpsOrLoopback('DI_IDENTITY_URL', identity),
+    },
   };
 }
 
