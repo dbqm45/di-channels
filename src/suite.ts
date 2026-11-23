@@ -5,6 +5,8 @@
  * name; DI Definition then shows the suite person as the author of the question.
  *
  * Never blocks a question: any failure or no match gives null, and the question goes with the Slack name as before.
+ * Each null says why in the log (no e-mail from Slack, no such person in the suite, or the error), once per cache
+ * period, so a missing suite author is one log line to explain.
  * Results are kept per Slack user for an hour (no match for 10 minutes), so a modal stays within Slack's 3 seconds.
  * The e-mail is never logged and never sent anywhere but to di-identity.
  */
@@ -29,6 +31,9 @@ const MISSING_TTL_MS = 10 * 60 * 1000;
 const CALL_TIMEOUT_MS = 2000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/** Why a Slack user has no suite person (an answer, not a failure); logged, never with the e-mail. */
+class Miss extends Error {}
+
 export function suitePeople(link: SuiteLink, deps: { fetch: typeof fetch; now: () => Date; log: (m: string) => void; slackBotToken: string }): FindSuitePerson {
   const cache = new Map<string, { person: SuitePerson | null; until: number }>();
   let token = '';
@@ -51,7 +56,7 @@ export function suitePeople(link: SuiteLink, deps: { fetch: typeof fetch; now: (
     return token;
   };
 
-  const slackEmail = async (user: string): Promise<string | null> => {
+  const slackEmail = async (user: string): Promise<string> => {
     const res = await call('https://slack.com/api/users.info', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: `Bearer ${deps.slackBotToken}` },
@@ -59,15 +64,21 @@ export function suitePeople(link: SuiteLink, deps: { fetch: typeof fetch; now: (
     });
     const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; user?: { deleted?: boolean; is_bot?: boolean; profile?: { email?: string } } };
     if (!body.ok) throw new Error(`users.info: ${body.error ?? `HTTP ${res.status}`}`);
-    if (body.user?.deleted || body.user?.is_bot) return null;
-    return body.user?.profile?.email?.trim().toLowerCase() || null;
+    if (body.user?.deleted || body.user?.is_bot) throw new Miss('a deleted user or a bot in Slack');
+    const email = body.user?.profile?.email?.trim().toLowerCase();
+    if (!email) throw new Miss('Slack gave no e-mail (scope users:read.email, then reinstall the app)');
+    return email;
   };
 
-  const lookup = async (user: string): Promise<SuitePerson | null> => {
+  const lookup = async (user: string): Promise<SuitePerson> => {
     const email = await slackEmail(user);
-    if (!email) return null;
     const res = await call(`${link.identityUrl}/api/people?email=${encodeURIComponent(email)}`, { headers: { authorization: `Bearer ${await serviceToken()}` } });
-    if (res.status === 404) return null;
+    if (res.status === 404) {
+      // di-identity's own 404 carries a JSON error; an empty one is another service at DI_IDENTITY_URL.
+      const answer = (await res.json().catch(() => null)) as { error?: unknown } | null;
+      if (typeof answer?.error !== 'string') throw new Error('DI_IDENTITY_URL answered 404 without a di-identity answer: is it the di-identity address?');
+      throw new Miss('no single suite person with the Slack e-mail (di-identity answered 404)');
+    }
     if (!res.ok) throw new Error(`di-identity answered HTTP ${res.status}`);
     const body = (await res.json()) as { sub?: unknown; name?: unknown };
     if (typeof body.sub !== 'string' || !UUID.test(body.sub) || typeof body.name !== 'string' || !body.name.trim()) throw new Error('di-identity gave no person');
@@ -79,9 +90,10 @@ export function suitePeople(link: SuiteLink, deps: { fetch: typeof fetch; now: (
     if (hit && now() < hit.until) return hit.person;
     try {
       const person = await lookup(user);
-      cache.set(user, { person, until: now() + (person ? FOUND_TTL_MS : MISSING_TTL_MS) });
+      cache.set(user, { person, until: now() + FOUND_TTL_MS });
       return person;
     } catch (err) {
+      if (err instanceof Miss) cache.set(user, { person: null, until: now() + MISSING_TTL_MS });
       deps.log(`suite person for a Slack user not found: ${(err as Error).message}`);
       return null;
     }
