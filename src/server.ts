@@ -1,12 +1,14 @@
 import { createServer } from 'node:http';
 import { handle, type Response } from './app.ts';
 import { configFrom } from './config.ts';
+import { suitePeople } from './suite.ts';
 
 const MAX_BODY = 64 * 1024;
 
 const cfg = configFrom(process.env);
 const seen = new Set<string>();
 const log = (msg: string) => console.log(`${new Date().toISOString()} ${msg}`);
+const suitePerson = cfg.suite && suitePeople(cfg.suite, { fetch, now: () => new Date(), log, slackBotToken: cfg.slackBotToken });
 const server = createServer((req, res) => {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -24,6 +26,7 @@ const server = createServer((req, res) => {
       defer: (work) => void work.catch((e: unknown) => log(`after-reply work failed: ${e instanceof Error ? e.message : 'unknown error'}`)),
       log,
       seen,
+      ...(suitePerson && { suitePerson }),
     }).catch((e: unknown) => {
       log(`request failed: ${e instanceof Error ? e.message : 'unknown error'}`);
       return { status: 500 } as Response;

@@ -127,6 +127,30 @@ to samo, dodaj cron po stronie pdi (szczegóły: README pdi, sekcja „Czeka na 
 Sprawdzenie od ręki: `uv run sdlc deadlines` w katalogu pdi; w terminalu di-channels pojawi się
 `waiting <pozycja> (<etap>): sent`, jeśli jakiś etap minął.
 
+## 7. Autor z suity (tożsamość suity, ADR 17)
+
+Pytanie ze Slacka ma wtedy autora z suity (imię i nazwisko z `di-identity`), a nie „nazwa (Slack)”. Działa to, gdy
+osoba zalogowała się już do suity (np. przez Google) tym samym adresem e-mail, którego używa w Slacku.
+
+1. **Nowe uprawnienia aplikacji Slack.** Na api.slack.com/apps → aplikacja → **OAuth & Permissions → Bot Token
+   Scopes** dodaj `users:read` i `users:read.email` (są już w `slack/manifest.yaml`), potem **Reinstall to
+   Workspace**. Bez tego `users.info` odpowiada `missing_scope` i pytania idą z nazwą ze Slacka.
+2. **Sekret klienta `di-channels`** w Keycloak suity: konsola administracyjna → realm `suite` → **Clients →
+   di-channels → Credentials → Client secret**.
+3. **`di-identity` z włączonym API wyszukiwania** (`DI_IDENTITY_CLIENT_SECRET`, README `di-identity`, sekcja „API”);
+   `npm run identity -- configure` daje kontu `di-channels` rolę `di-identity:people-reader`.
+4. W `.env` di-channels:
+   ```
+   SUITE_ISSUER=http://localhost:8180/realms/suite
+   SUITE_CLIENT_SECRET=<sekret z kroku 2>
+   DI_IDENTITY_URL=http://localhost:3000
+   ```
+   i ponowne uruchomienie `npm start`.
+5. Test: `/di-question PAY-123 …` w Slacku. Na stronie historyjki w DI Definition autorem jest osoba z suity.
+
+Gdy osoby nie ma w suicie, `di-identity` nie odpowiada albo minie limit czasu (w oknie skrótu 0,8 s), pytanie idzie
+jak dotąd, z nazwą ze Slacka. Adres e-mail nie trafia do logów.
+
 ## Gdy coś nie działa
 
 | Objaw | Przyczyna |
@@ -136,6 +160,7 @@ Sprawdzenie od ręki: `uv run sdlc deadlines` w katalogu pdi; w terminalu di-cha
 | „DI Definition did not answer” | DI Definition nie działa, zły `DI_DEFINITION_URL`, DI Definition bez `CI_CHANNELS_SIGNING_SECRET` (brak w `.env` albo stara wersja; odpowiada wtedy 404) albo różne sekrety w obu aplikacjach (401) |
 | „There is no story …” | klucza nie ma w DI Definition (albo jest w innej przestrzeni — `DI_CHANNELS_WORKSPACES`) |
 | skrót nie otwiera okna, w terminalu `views.open failed` | zły `SLACK_BOT_TOKEN` albo aplikacja niezainstalowana |
+| `suite person for a Slack user not found: users.info: missing_scope` | brak `users:read`/`users:read.email` albo aplikacja niezainstalowana ponownie po ich dodaniu (punkt 7) |
 | `waiting …: Slack refused the message: missing_scope` | brak `chat:write`/`im:write` albo aplikacja niezainstalowana ponownie po ich dodaniu |
 | na starcie: `… go together` | ustawiony tylko jeden z `PDI_CHANNELS_SIGNING_SECRET`, `DI_CHANNELS_APPROVER` |
 | na starcie: `… is not set` | brak zmiennej o tej nazwie w `.env` (albo brak pliku `.env` w katalogu, z którego uruchamiasz `npm start`) |

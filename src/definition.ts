@@ -20,7 +20,8 @@ export interface ChannelQuestion {
   item: string;
   text: string;
   link?: string;
-  author: { name: string; user: string };
+  /** `suite_id`: the suite person matched to the Slack user (by e-mail, through di-identity); then `name` is the suite name. */
+  author: { name: string; user: string; suite_id?: string };
 }
 
 export type AskResult =

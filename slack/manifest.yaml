@@ -24,6 +24,8 @@ oauth_config:
       - commands
       - chat:write # "waiting for you" direct messages to the approver (step 17)
       - im:write # open that direct message
+      - users:read # the suite person behind a Slack user (ADR 17): users.info
+      - users:read.email # ... by their e-mail, looked up in di-identity
 settings:
   interactivity:
     is_enabled: true

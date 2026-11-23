@@ -1,5 +1,6 @@
 import { askDefinition, type AskResult, type ChannelQuestion, type DefinitionLink } from './definition.ts';
 import { deliverAt, parseWaiting, pdiSignatureProblem, waitingText, type WaitingConfig } from './waiting.ts';
+import { within, type FindSuitePerson, type SuiteLink } from './suite.ts';
 import { ADD_QUESTION_CALLBACK, QUESTION_MODAL, itemKeyIn, messageLink, parseCommand, questionModal, slackSignatureProblem, type ModalState } from './slack.ts';
 
 export interface Config {
@@ -14,6 +15,8 @@ export interface Config {
   modalTimeoutMs?: number;
   /** "Waiting for you" from DI Decision (step 17); without it POST /pdi/waiting is 404. */
   waiting?: WaitingConfig;
+  /** The suite identity service, to send the suite person as the author (ADR 17); without it the Slack name. */
+  suite?: SuiteLink;
 }
 
 export interface Request {
@@ -36,6 +39,17 @@ export interface Deps {
   log: (msg: string) => void;
   /** Ids of pdi messages already delivered (a retried delivery is not sent twice); per process. */
   seen?: Set<string>;
+  /** The suite person behind a Slack user (suite.ts); null when there is none or the suite does not answer. */
+  suitePerson?: FindSuitePerson;
+}
+
+/** How long the modal waits for the suite person before sending the question with the Slack name. */
+const MODAL_SUITE_MS = 800;
+
+/** The question's author: the suite person when found, else the Slack name. */
+async function authorOf(user: string, slackName: string, find: FindSuitePerson | undefined): Promise<ChannelQuestion['author']> {
+  const person = find && user ? await find(user) : null;
+  return person ? { name: person.name, user, suite_id: person.sub } : { name: slackName.slice(0, 80), user };
 }
 
 const ok = (body?: unknown): Response => ({ status: 200, ...(body !== undefined && { body }) });
@@ -86,7 +100,8 @@ async function command(form: URLSearchParams, cfg: Config, deps: Deps): Promise<
     author: { name: (form.get('user_name') || user).slice(0, 80), user },
   };
   deps.defer(
-    askDefinition({ ...cfg.definition, fetch: deps.fetch }, q).then(async (r) => {
+    authorOf(user, q.author.name, deps.suitePerson).then(async (author) => {
+      const r = await askDefinition({ ...cfg.definition, fetch: deps.fetch }, { ...q, author });
       deps.log(`question on ${q.item} from /di-question: ${outcome(r)}`);
       const sent = await deps.fetch(responseUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ response_type: 'ephemeral', text: replyText(r, q.item) }) });
       if (!sent.ok) deps.log(`reply to Slack failed: HTTP ${sent.status}`);
@@ -151,7 +166,7 @@ async function interaction(form: URLSearchParams, cfg: Config, deps: Deps): Prom
       item: key,
       text,
       ...(state.link && { link: state.link }),
-      author: { name: (p.user?.name || p.user?.username || user).slice(0, 80), user },
+      author: await authorOf(user, p.user?.name || p.user?.username || user, deps.suitePerson && within(deps.suitePerson, MODAL_SUITE_MS)),
     };
     const r = await askDefinition({ ...cfg.definition, fetch: deps.fetch, timeoutMs: cfg.modalTimeoutMs ?? 2500 }, q);
     deps.log(`question on ${key} from the shortcut: ${outcome(r)}`);
