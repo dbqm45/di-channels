@@ -1,6 +1,7 @@
 import { askDefinition, type AskResult, type ChannelQuestion, type DefinitionLink } from './definition.ts';
 import { deliverAt, parseWaiting, pdiSignatureProblem, waitingText, type WaitingConfig } from './waiting.ts';
-import { within, type FindSuitePerson, type SuiteLink } from './suite.ts';
+import { within, type FindSlackUser, type FindSuitePerson, type SuiteLink } from './suite.ts';
+import { askedText, digestEmpty, digestText, parseAsked, parseDigest } from './team.ts';
 import { ADD_QUESTION_CALLBACK, QUESTION_MODAL, itemKeyIn, messageLink, parseCommand, questionModal, slackSignatureProblem, type ModalState } from './slack.ts';
 
 export interface Config {
@@ -41,6 +42,8 @@ export interface Deps {
   seen?: Set<string>;
   /** The suite person behind a Slack user (suite.ts); null when there is none or the suite does not answer. */
   suitePerson?: FindSuitePerson;
+  /** The Slack user of a suite person (suite.ts, DI Team T6); null when there is none. */
+  slackUserOf?: FindSlackUser;
 }
 
 /** How long the modal waits for the suite person before sending the question with the Slack name. */
@@ -70,6 +73,8 @@ export const outcome = (r: AskResult) => (r.ok ? (r.duplicate ? 'already added' 
 export async function handle(req: Request, cfg: Config, deps: Deps): Promise<Response> {
   if (req.method === 'GET' && req.path === '/health') return ok({ ok: true });
   if (req.method === 'POST' && req.path === '/pdi/waiting') return waiting(req, cfg, deps);
+  if (req.method === 'POST' && req.path === '/pdi/asked') return asked(req, cfg, deps);
+  if (req.method === 'POST' && req.path === '/pdi/digest') return digest(req, cfg, deps);
   if (req.method !== 'POST' || (req.path !== '/slack/commands' && req.path !== '/slack/interactions')) return { status: 404 };
   const problem = slackSignatureProblem(cfg.slackSigningSecret, req.headers['x-slack-request-timestamp'], req.body, req.headers['x-slack-signature'], deps.now());
   if (problem) {
@@ -186,38 +191,99 @@ const slackApi = async (deps: Deps, token: string, method: string, body: unknown
   return ((await res?.json().catch(() => undefined)) as { ok?: boolean; error?: string; channel?: { id?: string } } | undefined) ?? { ok: false, error: 'no answer' };
 };
 
-/** pdi → a direct message to the approver; inside quiet hours Slack holds it until 8:00 of the next working day. */
-async function waiting(req: Request, cfg: Config, deps: Deps): Promise<Response> {
-  if (!cfg.waiting) return { status: 404 };
-  const problem = pdiSignatureProblem(cfg.waiting.secret, req.headers['x-pdi-timestamp'], req.body, req.headers['x-pdi-signature'], deps.now());
-  if (problem) {
-    deps.log(`refused a pdi message: ${problem}`);
-    return { status: 401 };
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(req.body);
-  } catch {
-    return { status: 400, body: { detail: 'the body is not JSON' } };
-  }
-  const w = parseWaiting(parsed);
-  if (typeof w === 'string') return { status: 400, body: { detail: w } };
-  if (deps.seen?.has(w.id)) return ok({ delivered: 'duplicate' });
-  const dm = await slackApi(deps, cfg.slackBotToken, 'conversations.open', { users: cfg.waiting.approver });
+type Delivery = { ok: true; at: Date | null } | { ok: false; detail: string };
+
+/** A direct message to one Slack user; inside quiet hours Slack holds it until 8:00 of the next working day. */
+async function directMessage(cfg: Config, deps: Deps, user: string, text: string, label: string): Promise<Delivery> {
+  const dm = await slackApi(deps, cfg.slackBotToken, 'conversations.open', { users: user });
   if (!dm.ok || !dm.channel?.id) {
-    deps.log(`waiting ${w.item}: conversations.open failed: ${dm.error ?? 'no channel'}`);
-    return { status: 502, body: { detail: 'Slack did not open the direct message' } };
+    deps.log(`${label}: conversations.open failed: ${dm.error ?? 'no channel'}`);
+    return { ok: false, detail: 'Slack did not open the direct message' };
   }
-  const later = deliverAt(deps.now(), cfg.waiting.timeZone);
-  const text = waitingText(w);
+  const later = deliverAt(deps.now(), cfg.waiting!.timeZone);
   const sent = later
     ? await slackApi(deps, cfg.slackBotToken, 'chat.scheduleMessage', { channel: dm.channel.id, text, post_at: Math.floor(later.getTime() / 1000) })
     : await slackApi(deps, cfg.slackBotToken, 'chat.postMessage', { channel: dm.channel.id, text });
   if (!sent.ok) {
-    deps.log(`waiting ${w.item}: Slack refused the message: ${sent.error ?? 'unknown'}`);
-    return { status: 502, body: { detail: 'Slack did not accept the message' } };
+    deps.log(`${label}: Slack refused the message: ${sent.error ?? 'unknown'}`);
+    return { ok: false, detail: 'Slack did not accept the message' };
   }
+  return { ok: true, at: later };
+}
+
+/** A signed JSON message from pdi, or the answer refusing it. */
+function pdiBody(req: Request, cfg: Config, deps: Deps): { json: unknown } | { refused: Response } {
+  if (!cfg.waiting) return { refused: { status: 404 } };
+  const problem = pdiSignatureProblem(cfg.waiting.secret, req.headers['x-pdi-timestamp'], req.body, req.headers['x-pdi-signature'], deps.now());
+  if (problem) {
+    deps.log(`refused a pdi message: ${problem}`);
+    return { refused: { status: 401 } };
+  }
+  try {
+    return { json: JSON.parse(req.body) };
+  } catch {
+    return { refused: { status: 400, body: { detail: 'the body is not JSON' } } };
+  }
+}
+
+/** pdi → a direct message to the approver (step 17). */
+async function waiting(req: Request, cfg: Config, deps: Deps): Promise<Response> {
+  const got = pdiBody(req, cfg, deps);
+  if ('refused' in got) return got.refused;
+  const w = parseWaiting(got.json);
+  if (typeof w === 'string') return { status: 400, body: { detail: w } };
+  if (deps.seen?.has(w.id)) return ok({ delivered: 'duplicate' });
+  const sent = await directMessage(cfg, deps, cfg.waiting!.approver, waitingText(w), `waiting ${w.item}`);
+  if (!sent.ok) return { status: 502, body: { detail: sent.detail } };
   deps.seen?.add(w.id);
-  deps.log(`waiting ${w.item} (${w.stage}): ${later ? `scheduled for ${later.toISOString()}` : 'sent'}`);
-  return ok({ delivered: later ? 'scheduled' : 'now', ...(later && { at: later.toISOString() }) });
+  deps.log(`waiting ${w.item} (${w.stage}): ${sent.at ? `scheduled for ${sent.at.toISOString()}` : 'sent'}`);
+  return ok({ delivered: sent.at ? 'scheduled' : 'now', ...(sent.at && { at: sent.at.toISOString() }) });
+}
+
+/** "Ask team" in pdi → a direct message to every asked person found in Slack (DI Team T6). */
+async function asked(req: Request, cfg: Config, deps: Deps): Promise<Response> {
+  if (!cfg.suite || !deps.slackUserOf) return { status: 404 };
+  const got = pdiBody(req, cfg, deps);
+  if ('refused' in got) return got.refused;
+  const a = parseAsked(got.json);
+  if (typeof a === 'string') return { status: 400, body: { detail: a } };
+  const text = askedText(a, cfg.waiting!.timeZone);
+  const delivered: { person: string; status: string }[] = [];
+  for (const person of a.people) {
+    const user = await deps.slackUserOf(person);
+    if (!user) {
+      delivered.push({ person, status: 'not_in_slack' });
+      continue;
+    }
+    const key = `${a.id}:${person}`;
+    if (deps.seen?.has(key)) {
+      delivered.push({ person, status: 'duplicate' });
+      continue;
+    }
+    const sent = await directMessage(cfg, deps, user, text, `asked ${a.item}`);
+    if (sent.ok) deps.seen?.add(key);
+    delivered.push({ person, status: sent.ok ? (sent.at ? 'scheduled' : 'now') : 'failed' });
+  }
+  deps.log(`asked ${a.item}: ${delivered.map((d) => d.status).join(', ')}`);
+  return ok({ delivered });
+}
+
+/** The daily digest for the approver or one person (DI Team T6); an empty one sends nothing. */
+async function digest(req: Request, cfg: Config, deps: Deps): Promise<Response> {
+  const got = pdiBody(req, cfg, deps);
+  if ('refused' in got) return got.refused;
+  const d = parseDigest(got.json);
+  if (typeof d === 'string') return { status: 400, body: { detail: d } };
+  if (digestEmpty(d)) return ok({ delivered: 'empty' });
+  if (deps.seen?.has(d.id)) return ok({ delivered: 'duplicate' });
+  let user: string | null;
+  if ('approver' in d.to) user = cfg.waiting!.approver;
+  else if (!cfg.suite || !deps.slackUserOf) return { status: 404 };
+  else user = await deps.slackUserOf(d.to.person);
+  if (!user) return ok({ delivered: 'not_in_slack' });
+  const sent = await directMessage(cfg, deps, user, digestText(d, cfg.waiting!.timeZone), `digest ${d.day}`);
+  if (!sent.ok) return { status: 502, body: { detail: sent.detail } };
+  deps.seen?.add(d.id);
+  deps.log(`digest ${d.day}: ${sent.at ? `scheduled for ${sent.at.toISOString()}` : 'sent'}`);
+  return ok({ delivered: sent.at ? 'scheduled' : 'now', ...(sent.at && { at: sent.at.toISOString() }) });
 }

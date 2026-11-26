@@ -163,6 +163,22 @@ osoba zalogowała się już do suity (np. przez Google) tym samym adresem e-mail
 Gdy osoby nie ma w suicie, `di-identity` nie odpowiada albo minie limit czasu (w oknie skrótu 0,8 s), pytanie idzie
 jak dotąd, z nazwą ze Slacka. Adres e-mail nie trafia do logów.
 
+## 8. „Ask team” i dzienny skrót (DI Team T6)
+
+Wymaga sekcji 5 i 7.
+
+1. **Uprawnienia aplikacji Slack:** `users:read.email` z sekcji 7 wystarcza do `users.lookupByEmail`. Nic nowego.
+2. **di-identity z `GET /api/people/<sub>`** (wersja z tym API). Odpowiada tylko klientom z `email: true`, czyli
+   `di-channels`.
+3. **pdi:** te same `PDI_CHANNELS_URL` i `PDI_CHANNELS_SIGNING_SECRET` co w sekcji 5. Pytanie zespołu wysyła się
+   samo; dzienny skrót wysyła `sdlc digest`. Cron w dni robocze tuż przed 8:00 (szczegóły: README pdi):
+   ```
+   55 7 * * 1-5 /opt/homebrew/bin/uv run --directory /Users/<ty>/<ścieżka>/pdi sdlc digest >> ~/.sdlc/digest.log 2>&1
+   ```
+4. Test: w konsoli pdi zapytaj zespół („Ask team”) o osobę, która loguje się do suity tym samym e-mailem co do
+   Slacka. W terminalu di-channels: `asked <pozycja>: now`. Osoba bez konta Slack z tym adresem: `not_in_slack`, a
+   pdi pokazuje to przy pytaniu.
+
 ## Gdy coś nie działa
 
 | Objaw | Przyczyna |
@@ -178,6 +194,8 @@ jak dotąd, z nazwą ze Slacka. Adres e-mail nie trafia do logów.
 | `… not found: DI_IDENTITY_URL answered 404 without a di-identity answer` | `DI_IDENTITY_URL` wskazuje inną usługę (np. port 3100 tej usługi) |
 | `suite person for a Slack user not found: users.info: missing_scope` | brak `users:read`/`users:read.email` albo aplikacja niezainstalowana ponownie po ich dodaniu (punkt 7) |
 | `waiting …: Slack refused the message: missing_scope` | brak `chat:write`/`im:write` albo aplikacja niezainstalowana ponownie po ich dodaniu |
+| `Slack user for a suite person not found: di-identity refused: this client may not read e-mails` | di-identity bez `email: true` dla `di-channels` albo stara wersja bez `GET /api/people/<sub>` (punkt 8) |
+| `Slack user for a suite person not found: no Slack user with the suite e-mail` | osoba ma w Slacku inny adres niż w suicie; pdi pokaże ją jako „not reachable in Slack” |
 | na starcie: `… go together` | ustawiony tylko jeden z `PDI_CHANNELS_SIGNING_SECRET`, `DI_CHANNELS_APPROVER` |
 | na starcie: `… is not set` | brak zmiennej o tej nazwie w `.env` (albo brak pliku `.env` w katalogu, z którego uruchamiasz `npm start`) |
 | autor „<imię z Google> (Slack)” | DI Definition w starszej wersji (punkt 7.5): `git pull` w ci_for_sdlc i restart |

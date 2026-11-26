@@ -20,7 +20,21 @@ roboczego (`chat.scheduleMessage`).
 Kolejne etapy terminu (N3) przychodzą jako osobne wiadomości: przypomnienie, „termin dziś”, „po terminie”, „zmiana
 wstrzymana” (2 × termin) i „lista do przeglądu” (4 × termin).
 
-Bez przypomnień, głosowania, odpowiedzi w wątku i Teams — to R8 i kolejne kroki.
+**„Ask team” i dzienny skrót z DI Decision** (DI Team T6, plan: dbqm45/pdi `docs/plan-t6-skroty-slack.md`):
+- `POST /pdi/asked`: gdy decydent w pdi pyta zespół, każda zapytana osoba dostaje prywatną wiadomość: kto pyta, o
+  co, do kiedy i link „Answer in DI Decision”. pdi zna osoby tylko po `sub` z suity. Ta usługa pyta di-identity o
+  zweryfikowany e-mail osoby (`GET /api/people/<sub>`, tylko dla klientów z `email: true`) i szuka jej w Slacku
+  (`users.lookupByEmail`). E-mail nie wraca do pdi i nie trafia do logów. Odpowiedź mówi pdi, do kogo wiadomość
+  doszła (`now`, `scheduled`, `not_in_slack`, `failed`, `duplicate`).
+- `POST /pdi/digest`: raz w dzień roboczy jedna wiadomość dla zatwierdzającego (`to: { approver: true }`) albo dla
+  osoby (`to: { person: <sub> }`): co czeka na decyzję (do 10 najpilniejszych), o co ją zapytano, co jest u zespołu,
+  ile spraw jest na agendzie i kogo nie znaleziono w Slacku. Treść liczy pdi; pusty skrót nie wysyła niczego, a ten sam
+  `id` drugi raz to `duplicate`.
+
+Obie wiadomości mają ten sam podpis co `gate.waiting` i te same godziny ciszy. Wiadomości do osób (nie do
+zatwierdzającego) działają tylko z połączeniem z suitą (sekcja 7 `slack-setup.md`).
+
+Bez głosowania, odpowiedzi w wątku i Teams — to kolejne kroki.
 
 ## Uruchomienie
 
