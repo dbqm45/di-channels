@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { handle, type Response } from './app.ts';
 import { configFrom } from './config.ts';
-import { suitePeople } from './suite.ts';
+import { slackUsers, suitePeople } from './suite.ts';
 
 const MAX_BODY = 64 * 1024;
 
@@ -9,6 +9,7 @@ const cfg = configFrom(process.env);
 const seen = new Set<string>();
 const log = (msg: string) => console.log(`${new Date().toISOString()} ${msg}`);
 const suitePerson = cfg.suite && suitePeople(cfg.suite, { fetch, now: () => new Date(), log, slackBotToken: cfg.slackBotToken });
+const slackUserOf = cfg.suite && slackUsers(cfg.suite, { fetch, now: () => new Date(), log, slackBotToken: cfg.slackBotToken });
 const server = createServer((req, res) => {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -27,6 +28,7 @@ const server = createServer((req, res) => {
       log,
       seen,
       ...(suitePerson && { suitePerson }),
+      ...(slackUserOf && { slackUserOf }),
     }).catch((e: unknown) => {
       log(`request failed: ${e instanceof Error ? e.message : 'unknown error'}`);
       return { status: 500 } as Response;
@@ -40,4 +42,5 @@ const port = Number(process.env.PORT ?? 3100);
 server.listen(port, () => {
   log(`di-channels on :${port}`);
   log(cfg.suite ? `suite person as author: on (di-identity ${cfg.suite.identityUrl})` : 'suite person as author: off (set SUITE_ISSUER, SUITE_CLIENT_SECRET and DI_IDENTITY_URL)');
+  if (cfg.waiting) log(cfg.suite ? 'asked of you and personal digests: on' : 'asked of you and personal digests: off (needs the suite link); the approver digest is on');
 });
