@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { handle, type Config, type Deps } from '../src/app.ts';
 import { slackUsers, type SuiteLink } from '../src/suite.ts';
-import { askedText, digestText, parseAsked, parseDigest } from '../src/team.ts';
+import { askedText, digestText, escalatedText, parseAsked, parseDigest, parseEscalated } from '../src/team.ts';
 import { pdiSignature } from '../src/waiting.ts';
 
 const PDI = 'pdi-channels-test';
@@ -211,5 +211,65 @@ describe('the daily digest (DI Team T6)', () => {
     const d = parseDigest(digest());
     assert.ok(typeof d === 'object');
     assert.ok(digestText(d, 'Europe/Warsaw').length < 3500);
+  });
+});
+
+const escalated = (extra: Record<string, unknown> = {}) => ({
+  type: 'team.escalated',
+  id: 'escalated-evt-1-2026-11-23T09:00:00Z',
+  item: 'evt-1',
+  summary: 'Prośba o bramkę B5',
+  by: 'Ola Test',
+  to: SUB_ADM,
+  reason: 'Wydanie dotyka płatności <b>',
+  due: '2026-11-24',
+  change: 'CHG-1',
+  gate: 'B5',
+  url: 'http://127.0.0.1:8788/inbox',
+  ...extra,
+});
+
+describe('escalated to you: "Escalate" in DI Decision (DI Team T7)', () => {
+  it('TE-01: the addressee gets a direct message that the decision is now theirs', async () => {
+    const w = world(WORKING);
+    const res = await handle(signed('/pdi/escalated', escalated(), WORKING), cfg, w.deps);
+    assert.deepEqual(res.body, { delivered: 'now' });
+    assert.deepEqual(w.calls.find((c) => c.path === 'conversations.open')!.body, { users: 'U0ADM' });
+    const text = String(w.calls.find((c) => c.path === 'chat.postMessage')!.body.text);
+    assert.match(text, /^\*Ola Test escalated a decision to you\* — CHG-1 · B5\n/);
+    assert.match(text, /Why: Wydanie dotyka płatności &lt;b&gt;/);
+    assert.match(text, /You decide now\. Due 2026-11-24\. <http:\/\/127\.0\.0\.1:8788\/inbox\|Decide in DI Decision>/);
+  });
+
+  it('TE-02: an addressee missing from Slack is reported; a redelivery is a duplicate; a bad body is refused', async () => {
+    const w = world(WORKING);
+    assert.deepEqual((await handle(signed('/pdi/escalated', escalated({ to: SUB_NEW }), WORKING), cfg, w.deps)).body, { delivered: 'not_in_slack' });
+    await handle(signed('/pdi/escalated', escalated(), WORKING), cfg, w.deps);
+    assert.deepEqual((await handle(signed('/pdi/escalated', escalated(), WORKING), cfg, w.deps)).body, { delivered: 'duplicate' });
+    assert.equal((await handle(signed('/pdi/escalated', escalated({ reason: '' }), WORKING), cfg, w.deps)).status, 400);
+    assert.equal((await handle(signed('/pdi/escalated', escalated({ to: 'ola' }), WORKING), cfg, w.deps)).status, 400);
+    const { suite: _, ...noSuite } = cfg;
+    assert.equal((await handle(signed('/pdi/escalated', escalated(), WORKING), noSuite, w.deps)).status, 404);
+  });
+
+  it('TE-03: the digest has "Escalated to you" and a digest with only that is not empty', async () => {
+    const w = world(WORKING);
+    const body = digest({
+      id: `digest-${SUB_ADM}-2026-11-23`,
+      to: { person: SUB_ADM },
+      waiting: { total: 0, items: [] },
+      with_team: [],
+      to_discuss: { count: 0 },
+      unreachable: [],
+      escalated_to_you: [{ item: 'evt-1', summary: 'Prośba o bramkę B5', by: 'Ola Test', due: '2026-11-24', url: 'http://127.0.0.1:8788/inbox' }],
+    });
+    assert.deepEqual((await handle(signed('/pdi/digest', body, WORKING), cfg, w.deps)).body, { delivered: 'now' });
+    const text = String(w.calls.find((c) => c.path === 'chat.postMessage')!.body.text);
+    assert.match(text, /\*Escalated to you \(1\)\*\n• Ola Test: Prośba o bramkę B5 \(due 2026-11-24\) <http:\/\/127\.0\.0\.1:8788\/inbox\|Decide>/);
+    assert.match(String(parseDigest(digest({ escalated_to_you: [{ item: 'x' }] }))), /escalated_to_you/);
+    assert.match(String(parseEscalated(escalated({ due: 'soon' }))), /due/);
+    const e = parseEscalated(escalated());
+    assert.ok(typeof e === 'object');
+    assert.match(escalatedText(e), /Decide in DI Decision/);
   });
 });

@@ -163,7 +163,7 @@ osoba zalogowała się już do suity (np. przez Google) tym samym adresem e-mail
 Gdy osoby nie ma w suicie, `di-identity` nie odpowiada albo minie limit czasu (w oknie skrótu 0,8 s), pytanie idzie
 jak dotąd, z nazwą ze Slacka. Adres e-mail nie trafia do logów.
 
-## 8. „Ask team” i dzienny skrót (DI Team T6)
+## 8. „Ask team”, „Escalate” i dzienny skrót (DI Team T6, T7)
 
 Wymaga sekcji 5 i 7.
 
@@ -175,7 +175,8 @@ Wymaga sekcji 5 i 7.
    ```
    55 7 * * 1-5 /opt/homebrew/bin/uv run --directory /Users/<ty>/<ścieżka>/pdi sdlc digest >> ~/.sdlc/digest.log 2>&1
    ```
-4. Test: w konsoli pdi zapytaj zespół („Ask team”) o osobę, która loguje się do suity tym samym e-mailem co do
+4. „Escalate” (DI Team T7) działa tak samo: ta sama konfiguracja, wiadomość `escalated <pozycja>: now` w terminalu.
+5. Test: w konsoli pdi zapytaj zespół („Ask team”) o osobę, która loguje się do suity tym samym e-mailem co do
    Slacka. W terminalu di-channels: `asked <pozycja>: now`. Osoba bez konta Slack z tym adresem: `not_in_slack`, a
    pdi pokazuje to przy pytaniu.
 
