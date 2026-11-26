@@ -31,7 +31,11 @@ wstrzymana” (2 × termin) i „lista do przeglądu” (4 × termin).
   ile spraw jest na agendzie i kogo nie znaleziono w Slacku. Treść liczy pdi; pusty skrót nie wysyła niczego, a ten sam
   `id` drugi raz to `duplicate`.
 
-Obie wiadomości mają ten sam podpis co `gate.waiting` i te same godziny ciszy. Wiadomości do osób (nie do
+- `POST /pdi/escalated` („Escalate”, DI Team T7, plan: dbqm45/pdi `docs/plan-t7-escalate.md`): osoba, do której
+  eskalowano sprawę, dostaje wiadomość prywatną: kto przekazał decyzję, o co chodzi, dlaczego, do kiedy i link „Decide in
+  DI Decision”. W jej dziennym skrócie jest sekcja „Escalated to you” (`escalated_to_you`), dopóki nie zdecyduje.
+
+Te wiadomości mają ten sam podpis co `gate.waiting` i te same godziny ciszy. Wiadomości do osób (nie do
 zatwierdzającego) działają tylko z połączeniem z suitą (sekcja 7 `slack-setup.md`).
 
 Bez głosowania, odpowiedzi w wątku i Teams — to kolejne kroki.

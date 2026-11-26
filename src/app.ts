@@ -1,7 +1,7 @@
 import { askDefinition, type AskResult, type ChannelQuestion, type DefinitionLink } from './definition.ts';
 import { deliverAt, parseWaiting, pdiSignatureProblem, waitingText, type WaitingConfig } from './waiting.ts';
 import { within, type FindSlackUser, type FindSuitePerson, type SuiteLink } from './suite.ts';
-import { askedText, digestEmpty, digestText, parseAsked, parseDigest } from './team.ts';
+import { askedText, digestEmpty, digestText, escalatedText, parseAsked, parseDigest, parseEscalated } from './team.ts';
 import { ADD_QUESTION_CALLBACK, QUESTION_MODAL, itemKeyIn, messageLink, parseCommand, questionModal, slackSignatureProblem, type ModalState } from './slack.ts';
 
 export interface Config {
@@ -75,6 +75,7 @@ export async function handle(req: Request, cfg: Config, deps: Deps): Promise<Res
   if (req.method === 'POST' && req.path === '/pdi/waiting') return waiting(req, cfg, deps);
   if (req.method === 'POST' && req.path === '/pdi/asked') return asked(req, cfg, deps);
   if (req.method === 'POST' && req.path === '/pdi/digest') return digest(req, cfg, deps);
+  if (req.method === 'POST' && req.path === '/pdi/escalated') return escalated(req, cfg, deps);
   if (req.method !== 'POST' || (req.path !== '/slack/commands' && req.path !== '/slack/interactions')) return { status: 404 };
   const problem = slackSignatureProblem(cfg.slackSigningSecret, req.headers['x-slack-request-timestamp'], req.body, req.headers['x-slack-signature'], deps.now());
   if (problem) {
@@ -285,5 +286,22 @@ async function digest(req: Request, cfg: Config, deps: Deps): Promise<Response> 
   if (!sent.ok) return { status: 502, body: { detail: sent.detail } };
   deps.seen?.add(d.id);
   deps.log(`digest ${d.day}: ${sent.at ? `scheduled for ${sent.at.toISOString()}` : 'sent'}`);
+  return ok({ delivered: sent.at ? 'scheduled' : 'now', ...(sent.at && { at: sent.at.toISOString() }) });
+}
+
+/** "Escalate" in pdi → a direct message to the person who decides now (DI Team T7). */
+async function escalated(req: Request, cfg: Config, deps: Deps): Promise<Response> {
+  if (!cfg.suite || !deps.slackUserOf) return { status: 404 };
+  const got = pdiBody(req, cfg, deps);
+  if ('refused' in got) return got.refused;
+  const e = parseEscalated(got.json);
+  if (typeof e === 'string') return { status: 400, body: { detail: e } };
+  if (deps.seen?.has(e.id)) return ok({ delivered: 'duplicate' });
+  const user = await deps.slackUserOf(e.to);
+  if (!user) return ok({ delivered: 'not_in_slack' });
+  const sent = await directMessage(cfg, deps, user, escalatedText(e), `escalated ${e.item}`);
+  if (!sent.ok) return { status: 502, body: { detail: sent.detail } };
+  deps.seen?.add(e.id);
+  deps.log(`escalated ${e.item}: ${sent.at ? `scheduled for ${sent.at.toISOString()}` : 'sent'}`);
   return ok({ delivered: sent.at ? 'scheduled' : 'now', ...(sent.at && { at: sent.at.toISOString() }) });
 }

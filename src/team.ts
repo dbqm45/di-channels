@@ -5,6 +5,8 @@
  *   link to answer in DI Decision. pdi gets back who was reached, so the decider can see who was not.
  * - `POST /pdi/digest`: once a working day, one message per person: what waits for their decision, what they were
  *   asked, what is with the team and how much is on the agenda. pdi decides the content; this only words it.
+ * - `POST /pdi/escalated` ("Escalate", DI Team T7): the person a decision was escalated to gets a direct message — it is
+ *   now theirs to decide, why, by when.
  * Not contract events: an API between pdi and this service, like `gate.waiting`.
  */
 
@@ -44,6 +46,7 @@ export interface Digest {
   waiting: { total: number; items: DigestWaiting[] };
   withTeam: { item: string; summary: string; answered: number; asked: number; closesAt: string }[];
   askedOfYou: { item: string; summary: string; askedBy: string; closesAt: string; url?: string }[];
+  escalatedToYou: { item: string; summary: string; by: string; due: string; url?: string }[];
   toDiscuss: { count: number; url?: string };
   unreachable: string[];
 }
@@ -75,6 +78,41 @@ export function parseAsked(body: unknown): Asked | string {
     people: [...new Set(people as string[])],
     options: options as string[],
     closesAt: body.closes_at,
+    ...(body.change !== undefined && { change: body.change as string }),
+    ...(body.gate !== undefined && { gate: body.gate as string }),
+    ...(body.url !== undefined && { url: body.url as string }),
+  };
+}
+
+export interface Escalated {
+  id: string;
+  item: string;
+  summary: string;
+  by: string;
+  to: string;
+  reason: string;
+  due: string;
+  change?: string;
+  gate?: string;
+  url?: string;
+}
+
+export function parseEscalated(body: unknown): Escalated | string {
+  if (!isObj(body)) return 'the body must be a JSON object';
+  if (body.type !== 'team.escalated') return 'type must be team.escalated';
+  for (const [k, max] of [['id', 128], ['item', 128], ['summary', 300], ['by', 80], ['reason', 1000]] as const) if (!text(body, k, max)) return `${k}: missing or too long`;
+  if (typeof body.to !== 'string' || !UUID.test(body.to)) return 'to: a suite person id';
+  if (typeof body.due !== 'string' || !DAY.test(body.due)) return 'due: a date YYYY-MM-DD';
+  if (!opt(body, 'change', 40) || !opt(body, 'gate', 120)) return 'change or gate: too long';
+  if (!goodUrl(body.url)) return 'url: an http(s) address without a session token';
+  return {
+    id: body.id as string,
+    item: body.item as string,
+    summary: body.summary as string,
+    by: body.by as string,
+    to: body.to,
+    reason: body.reason as string,
+    due: body.due,
     ...(body.change !== undefined && { change: body.change as string }),
     ...(body.gate !== undefined && { gate: body.gate as string }),
     ...(body.url !== undefined && { url: body.url as string }),
@@ -120,6 +158,10 @@ export function parseDigest(body: unknown): Digest | string {
   const mine = listOf('asked_of_you');
   if (typeof mine === 'string') return mine;
   if (!mine.every((a) => text(a, 'item', 128) && text(a, 'summary', 300) && text(a, 'asked_by', 80) && typeof a.closes_at === 'string' && ISO.test(a.closes_at) && goodUrl(a.url))) return 'asked_of_you: item, summary, asked_by, closes_at, url';
+  const escalatedRaw = body.escalated_to_you ?? [];
+  if (!Array.isArray(escalatedRaw) || escalatedRaw.length > MAX_ITEMS || !escalatedRaw.every(isObj)) return `escalated_to_you: at most ${MAX_ITEMS} entries`;
+  const escalated = escalatedRaw as Obj[];
+  if (!escalated.every((e) => text(e, 'item', 128) && text(e, 'summary', 300) && text(e, 'by', 80) && typeof e.due === 'string' && DAY.test(e.due) && goodUrl(e.url))) return 'escalated_to_you: item, summary, by, due, url';
   const discuss = body.to_discuss;
   if (!isObj(discuss) || !count(discuss.count) || !goodUrl(discuss.url)) return 'to_discuss: { count, url? }';
   const unreachable = body.unreachable ?? [];
@@ -132,13 +174,14 @@ export function parseDigest(body: unknown): Digest | string {
     waiting: { total: Math.max(w.total as number, waiting.length), items: waiting },
     withTeam: team.map((t) => ({ item: t.item as string, summary: t.summary as string, answered: t.answered as number, asked: t.asked as number, closesAt: t.closes_at as string })),
     askedOfYou: mine.map((a) => ({ item: a.item as string, summary: a.summary as string, askedBy: a.asked_by as string, closesAt: a.closes_at as string, ...(a.url !== undefined && { url: a.url as string }) })),
+    escalatedToYou: escalated.map((e) => ({ item: e.item as string, summary: e.summary as string, by: e.by as string, due: e.due as string, ...(e.url !== undefined && { url: e.url as string }) })),
     toDiscuss: { count: discuss.count as number, ...(discuss.url !== undefined && { url: discuss.url as string }) },
     unreachable: unreachable as string[],
   };
 }
 
 /** Nothing to say: no message at all (a digest that says "nothing" is noise). */
-export const digestEmpty = (d: Digest) => d.waiting.total === 0 && d.withTeam.length === 0 && d.askedOfYou.length === 0 && d.toDiscuss.count === 0;
+export const digestEmpty = (d: Digest) => d.waiting.total === 0 && d.withTeam.length === 0 && d.askedOfYou.length === 0 && d.escalatedToYou.length === 0 && d.toDiscuss.count === 0;
 
 /** Slack mrkdwn: escape the three characters Slack treats as control characters. */
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -165,6 +208,12 @@ export function askedText(a: Asked, timeZone: string): string {
   );
 }
 
+export function escalatedText(e: Escalated): string {
+  const what = where(e.change, e.gate);
+  const decide = e.url ? `<${e.url}|Decide in DI Decision>` : 'Decide in DI Decision (Inbox).';
+  return `*${esc(e.by)} escalated a decision to you*${what ? ` — ${esc(what)}` : ''}\n${esc(e.summary)}\nWhy: ${esc(e.reason)}\nYou decide now. Due ${e.due}. ${decide}`;
+}
+
 const STAGE: Record<string, string> = { reminder: 'Reminder', due_today: 'Due today', overdue: 'Overdue', paused: 'Paused', review: 'On the review list' };
 
 export function digestText(d: Digest, timeZone: string): string {
@@ -178,6 +227,10 @@ export function digestText(d: Digest, timeZone: string): string {
     }
     const more = d.waiting.total - d.waiting.items.length;
     if (more > 0) lines.push(`…and ${more} more`);
+  }
+  if (d.escalatedToYou.length > 0) {
+    lines.push('', `*Escalated to you (${d.escalatedToYou.length})*`);
+    for (const e of d.escalatedToYou) lines.push(`• ${esc(e.by)}: ${esc(e.summary)} (due ${e.due})${link(e.url, 'Decide')}`);
   }
   if (d.askedOfYou.length > 0) {
     lines.push('', `*Asked of you (${d.askedOfYou.length})*`);
